@@ -1,0 +1,1082 @@
+local RunService = game:GetService("RunService")
+
+local cloneref = (cloneref or clonereference or function(instance) return instance end)
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+
+local WindUI
+
+do
+    local ok, result = pcall(function()
+        return require("./src/Init")
+    end)
+    
+    if ok then
+        WindUI = result
+    else 
+        if cloneref(game:GetService("RunService")):IsStudio() then
+            WindUI = require(cloneref(ReplicatedStorage:WaitForChild("WindUI"):WaitForChild("Init")))
+        else
+            WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+        end
+    end
+end
+
+local executorName = "Unknown"
+pcall(function()
+    if identifyexecutor then
+        executorName = identifyexecutor()
+    elseif getexecutorname then
+        executorName = getexecutorname()
+    end
+end)
+
+local Window = WindUI:CreateWindow({
+    Title = "Dooxbox Hub",
+    Folder = "dooxboxhub",
+    Icon = "solar:folder-2-bold-duotone",
+    NewElements = true,
+    HideSearchBar = false,
+    
+    OpenButton = {
+        Title = "Open Dooxbox Hub",
+        CornerRadius = UDim.new(1,0),
+        StrokeThickness = 3,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        Scale = 0.5,
+        
+        Color = ColorSequence.new(
+            Color3.fromHex("#30FF6A"), 
+            Color3.fromHex("#e7ff2f")
+        )
+    },
+    Topbar = {
+        Height = 44,
+        ButtonsType = "Mac",
+    },
+})
+
+Window:Tag({
+    Title = executorName,
+    Icon = "github",
+    Color = Color3.fromHex("#1c1c1c"),
+    Border = true,
+})
+
+local Purple = Color3.fromHex("#7775F2")
+local Yellow = Color3.fromHex("#ECA201")
+local Green = Color3.fromHex("#10C550")
+local Grey = Color3.fromHex("#83889E")
+local Blue = Color3.fromHex("#257AF7")
+local Red = Color3.fromHex("#EF4F1D")
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+local invisOn = false
+local fakeGhostOn = false
+local noclipOn = false
+local infJumpOn = false
+local espEnabled = false
+local gunEspEnabled = false
+local autoGunEnabled = false
+local autoGrabGunEnabled = false
+local godModeEnabled = false
+local touchFlingEnabled = false
+local noclipPlayersEnabled = false
+local keepWalkspeed = false
+local keepJumppower = false
+local walkspeed = 16
+local jumppower = 50
+local xrayEnabled = false
+local originalLightingSettings = {}
+local tradeTarget = ""
+local allEsp = false
+local murderEsp = false
+local sheriffEsp = false
+
+local noclipConn = nil
+local infJumpConn = nil
+local keepWalkspeedConn = nil
+local keepJumppowerConn = nil
+local touchFlingConn = nil
+local noclipPlayersConn = nil
+local godModeConn = nil
+
+local Lines = {}
+
+local ESPFolder = Instance.new("Folder")
+ESPFolder.Name = "ESP_Holder"
+ESPFolder.Parent = game:GetService("CoreGui")
+
+local function getCharacter()
+    return LocalPlayer.Character
+end
+
+local function getHumanoid()
+    local char = getCharacter()
+    return char and char:FindFirstChildWhichIsA("Humanoid")
+end
+
+local function getRootPart()
+    local char = getCharacter()
+    local hum = getHumanoid()
+    return (hum and hum.RootPart) or (char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")))
+end
+
+local function serverhop()
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+    
+    local servers = {}
+    local success, response = pcall(function()
+        return HttpService:JSONDecode(game:HttpGetAsync("https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?limit=100"))
+    end)
+    
+    if success and response and response.data then
+        for _, server in ipairs(response.data) do
+            if server.playing < server.maxPlayers and server.id ~= jobId then
+                table.insert(servers, server.id)
+            end
+        end
+    end
+    
+    if #servers > 0 then
+        local randomServer = servers[math.random(1, #servers)]
+        WindUI:Notify({
+            Title = "Server Hop",
+            Content = "Joining new server...",
+            Duration = 2
+        })
+        TeleportService:TeleportToPlaceInstance(placeId, randomServer, LocalPlayer)
+    else
+        WindUI:Notify({
+            Title = "Server Hop",
+            Content = "No servers found!",
+            Duration = 2
+        })
+    end
+end
+
+local function rejoin()
+    WindUI:Notify({
+        Title = "Rejoin",
+        Content = "Rejoining server...",
+        Duration = 2
+    })
+    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+end
+
+local function forceTrade(playerName)
+    local target = Players:FindFirstChild(playerName)
+    if target then
+        local tradeRemote = ReplicatedStorage:FindFirstChild("Trade")
+        if tradeRemote then
+            local sendRequest = tradeRemote:FindFirstChild("SendRequest")
+            local acceptRequest = tradeRemote:FindFirstChild("AcceptRequest")
+            
+            if sendRequest and acceptRequest then
+                pcall(function()
+                    sendRequest:InvokeServer(target)
+                    acceptRequest:FireServer()
+                end)
+                WindUI:Notify({
+                    Title = "Trade",
+                    Content = "Force traded: " .. playerName,
+                    Duration = 3
+                })
+            end
+        end
+    end
+end
+
+local function exposeRoles()
+    local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    if not chatRemote then return end
+    
+    local sayMsg = chatRemote:FindFirstChild("SayMessageRequest")
+    if not sayMsg then return end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            if backpack:FindFirstChild("Knife") then
+                sayMsg:FireServer(player.Name .. " has the Knife (Murderer)", "all")
+            end
+            if backpack:FindFirstChild("Gun") then
+                sayMsg:FireServer(player.Name .. " has the Gun (Sheriff/Hero)", "all")
+            end
+        end
+    end
+end
+
+local function stealGun()
+    local char = getCharacter()
+    local hum = getHumanoid()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    
+    if not (char and hum and backpack) then return end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if player.Character and player.Character:FindFirstChild("Gun") then
+                player.Character.Gun.Parent = char
+                hum:EquipTool(char:FindFirstChild("Gun"))
+            elseif player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Gun") then
+                player.Backpack.Gun.Parent = backpack
+                hum:EquipTool(backpack:FindFirstChild("Gun"))
+            end
+        end
+    end
+    WindUI:Notify({Title = "Steal Gun", Content = "Stole gun!", Duration = 2})
+end
+
+local function unlockEmotes()
+    local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not PlayerGui then return end
+    
+    local MainGUI = PlayerGui:FindFirstChild("MainGUI")
+    if MainGUI then
+        local GameGUI = MainGUI:FindFirstChild("Game")
+        if GameGUI then
+            local Emotes = GameGUI:FindFirstChild("Emotes")
+            if Emotes then
+                local emoteModule = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("EmoteModule")
+                if emoteModule then
+                    local success, result = pcall(function()
+                        return require(emoteModule)
+                    end)
+                    if success and result and result.GeneratePage then
+                        result.GeneratePage({"headless", "zombie", "zen", "ninja", "floss", "dab", "sit"}, Emotes, "Free Emotes")
+                        WindUI:Notify({Title = "Emotes", Content = "Added emotes!", Duration = 2})
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function AddBillboard(player)
+    local Billboard = Instance.new("BillboardGui")
+    Billboard.Name = player.Name .. "Billboard"
+    Billboard.AlwaysOnTop = true
+    Billboard.Size = UDim2.new(0, 200, 0, 50)
+    Billboard.ExtentsOffset = Vector3.new(0, 3, 0)
+    Billboard.Enabled = false
+    Billboard.Parent = ESPFolder
+
+    local TextLabel = Instance.new("TextLabel")
+    TextLabel.TextSize = 20
+    TextLabel.Text = player.Name
+    TextLabel.Font = Enum.Font.FredokaOne
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Size = UDim2.new(1, 0, 1, 0)
+    TextLabel.TextStrokeTransparency = 0
+    TextLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+    TextLabel.Parent = Billboard
+
+    task.spawn(function()
+        while player and player.Parent do
+            task.wait()
+            pcall(function()
+                if player.Character and player.Character:FindFirstChild("Head") then
+                    Billboard.Adornee = player.Character.Head
+                    
+                    local hasKnife = (player.Character and player.Character:FindFirstChild("Knife")) or 
+                                   (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Knife"))
+                    local hasGun = (player.Character and player.Character:FindFirstChild("Gun")) or 
+                                 (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Gun"))
+                    
+                    if hasKnife then
+                        TextLabel.TextColor3 = Color3.new(1, 0, 0)
+                        TextLabel.Text = "🔪 " .. player.Name
+                        Billboard.Enabled = murderEsp or allEsp
+                    elseif hasGun then
+                        TextLabel.TextColor3 = Color3.new(0, 0, 1)
+                        TextLabel.Text = "🔫 " .. player.Name
+                        Billboard.Enabled = sheriffEsp or allEsp
+                    else
+                        TextLabel.TextColor3 = Color3.new(0, 1, 0)
+                        TextLabel.Text = player.Name
+                        Billboard.Enabled = allEsp
+                    end
+                end
+            end)
+        end
+    end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        task.spawn(AddBillboard, player)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if player ~= LocalPlayer then
+        task.spawn(AddBillboard, player)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    local billboard = ESPFolder:FindFirstChild(player.Name .. "Billboard")
+    if billboard then billboard:Destroy() end
+end)
+
+local function setTransparency(char, val)
+    if not char then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            p.Transparency = val
+        end
+    end
+end
+
+local function toggleInvisible()
+    invisOn = not invisOn
+    local char = getCharacter()
+    if char then
+        if invisOn then
+            setTransparency(char, 0.5)
+            local savedpos = getRootPart() and getRootPart().CFrame
+            if savedpos then
+                task.wait()
+                char:MoveTo(Vector3.new(-25.95, 84, 3537.55))
+                task.wait(0.15)
+                local Seat = Instance.new("Seat", workspace)
+                Seat.Anchored = false
+                Seat.CanCollide = false
+                Seat.Name = "invischair"
+                Seat.Transparency = 1
+                Seat.Position = Vector3.new(-25.95, 84, 3537.55)
+                local Weld = Instance.new("Weld", Seat)
+                Weld.Part0 = Seat
+                Weld.Part1 = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+                Seat.CFrame = savedpos
+            end
+            WindUI:Notify({Title = "Invisible", Content = "Enabled", Duration = 1})
+        else
+            setTransparency(char, 0)
+            if workspace:FindFirstChild("invischair") then
+                workspace.invischair:Destroy()
+            end
+            WindUI:Notify({Title = "Invisible", Content = "Disabled", Duration = 1})
+        end
+    end
+end
+
+local function toggleFakeGhost()
+    fakeGhostOn = not fakeGhostOn
+    local char = getCharacter()
+    if char then
+        if fakeGhostOn then
+            setTransparency(char, 0.8)
+            WindUI:Notify({Title = "Fake Ghost", Content = "Enabled", Duration = 1})
+        else
+            setTransparency(char, 0)
+            WindUI:Notify({Title = "Fake Ghost", Content = "Disabled", Duration = 1})
+        end
+    end
+end
+
+local function toggleNoclip()
+    noclipOn = not noclipOn
+    if noclipOn then
+        noclipConn = RunService.Stepped:Connect(function()
+            local char = getCharacter()
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+        WindUI:Notify({Title = "Noclip", Content = "Enabled", Duration = 1})
+    else
+        if noclipConn then
+            noclipConn:Disconnect()
+            noclipConn = nil
+        end
+        WindUI:Notify({Title = "Noclip", Content = "Disabled", Duration = 1})
+    end
+end
+
+local function toggleInfJump()
+    infJumpOn = not infJumpOn
+    if infJumpOn then
+        infJumpConn = UserInputService.JumpRequest:Connect(function()
+            if infJumpOn then
+                local hum = getHumanoid()
+                if hum then
+                    hum:ChangeState("Jumping")
+                end
+            end
+        end)
+        WindUI:Notify({Title = "Inf Jump", Content = "Enabled", Duration = 1})
+    else
+        if infJumpConn then
+            infJumpConn:Disconnect()
+            infJumpConn = nil
+        end
+        WindUI:Notify({Title = "Inf Jump", Content = "Disabled", Duration = 1})
+    end
+end
+
+local function toggleXRay()
+    xrayEnabled = not xrayEnabled
+    
+    if xrayEnabled then
+        originalLightingSettings = {
+            Ambient = Lighting.Ambient,
+            Brightness = Lighting.Brightness,
+            GlobalShadows = Lighting.GlobalShadows,
+        }
+        
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.Brightness = 2
+        Lighting.GlobalShadows = false
+        WindUI:Notify({Title = "XRay", Content = "Enabled", Duration = 1})
+    else
+        for setting, value in pairs(originalLightingSettings) do
+            pcall(function() Lighting[setting] = value end)
+        end
+        WindUI:Notify({Title = "XRay", Content = "Disabled", Duration = 1})
+    end
+end
+
+local function HasCharacter(Player)
+    return Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetPlayerColor(Player)
+    if (Player.Backpack and Player.Backpack:FindFirstChild("Knife")) or (Player.Character and Player.Character:FindFirstChild("Knife")) then
+        return Color3.fromRGB(255, 0, 0)
+    elseif (Player.Backpack and Player.Backpack:FindFirstChild("Gun")) or (Player.Character and Player.Character:FindFirstChild("Gun")) then
+        return Color3.fromRGB(0, 0, 255)
+    else
+        return Color3.fromRGB(0, 255, 0)
+    end
+end
+
+local function DrawLine(From, To, color)
+    local FromScreen, FromVisible = Camera:WorldToViewportPoint(From)
+    local ToScreen, ToVisible = Camera:WorldToViewportPoint(To)
+
+    if (not FromVisible and not ToVisible) then return end
+
+    local FromPos = Vector2.new(FromScreen.X, FromScreen.Y)
+    local ToPos = Vector2.new(ToScreen.X, ToScreen.Y)
+
+    local Line = Drawing.new("Line")
+    Line.Thickness = 1
+    Line.From = FromPos
+    Line.To = ToPos
+    Line.Color = color or Color3.fromRGB(255, 255, 255)
+    Line.Transparency = 1
+    Line.Visible = true
+
+    table.insert(Lines, Line)
+end
+
+local function GetCorners(Part)
+    local CF, Size, Corners = Part.CFrame, Part.Size / 2, {}
+    for X = -1, 1, 2 do 
+        for Y = -1, 1, 2 do 
+            for Z = -1, 1, 2 do
+                Corners[#Corners+1] = (CF * CFrame.new(Size * Vector3.new(X, Y, Z))).Position      
+            end 
+        end 
+    end
+    return Corners
+end
+
+local function DrawBoxEsp(Player)
+    local HRP = Player.Character.HumanoidRootPart
+    local CubeVertices = GetCorners({CFrame = HRP.CFrame * CFrame.new(0, -0.5, 0), Size = Vector3.new(3, 5, 3)})
+    local playerColor = GetPlayerColor(Player)
+
+    local connections = {
+        {1, 2}, {2, 6}, {6, 5}, {5, 1}, 
+        {1, 3}, {2, 4}, {6, 8}, {5, 7},
+        {3, 4}, {4, 8}, {8, 7}, {7, 3}
+    }
+    
+    for _, pair in pairs(connections) do
+        DrawLine(CubeVertices[pair[1]], CubeVertices[pair[2]], playerColor)
+    end
+end
+
+local function toggleESP(useBox)
+    espEnabled = not espEnabled
+    
+    if espEnabled then
+        for i = 1, #Lines do
+            local Line = rawget(Lines, i)
+            if Line then Line:Remove() end
+        end
+        Lines = {}
+        
+        task.spawn(function()
+            while espEnabled do
+                for i = 1, #Lines do
+                    local Line = rawget(Lines, i)
+                    if Line then Line:Remove() end
+                end
+                Lines = {}
+                
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer and HasCharacter(player) then
+                        if useBox then
+                            DrawBoxEsp(player)
+                        end
+                    end
+                end
+                task.wait()
+            end
+            
+            for i = 1, #Lines do
+                local Line = rawget(Lines, i)
+                if Line then Line:Remove() end
+            end
+            Lines = {}
+        end)
+        
+        WindUI:Notify({Title = "ESP", Content = useBox and "Box Enabled" or "Highlight Enabled", Duration = 1})
+    end
+end
+
+local function flingPlayer(targetPlayer)
+    if not targetPlayer or targetPlayer == LocalPlayer then 
+        WindUI:Notify({Title = "Fling", Content = "Invalid target", Duration = 1})
+        return 
+    end
+    
+    local char = getCharacter()
+    local root = getRootPart()
+    local hum = getHumanoid()
+    local targetChar = targetPlayer.Character
+    
+    if not (char and root and hum and targetChar) then return end
+    
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head")
+    if not targetRoot then return end
+    
+    local oldPos = root.CFrame
+    Camera.CameraSubject = targetChar:FindFirstChild("Head") or targetRoot
+    
+    local BV = Instance.new("BodyVelocity")
+    BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+    BV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    BV.Parent = root
+    
+    if hum then
+        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+    end
+    
+    local startTime = tick()
+    repeat
+        if root and targetRoot then
+            root.CFrame = targetRoot.CFrame * CFrame.new(0, 2, 0)
+        end
+        task.wait()
+    until targetRoot.Velocity.Magnitude > 500 or tick() - startTime > 2
+    
+    BV:Destroy()
+    if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true) end
+    Camera.CameraSubject = hum
+    
+    root.CFrame = oldPos
+    WindUI:Notify({Title = "Fling", Content = "Flinged " .. targetPlayer.Name, Duration = 1})
+end
+
+local function getPlayerList()
+    local names = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(names, player.Name)
+        end
+    end
+    return names
+end
+
+local function getMurderer()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Backpack and player.Backpack:FindFirstChild("Knife") then
+            return player
+        end
+        if player.Character and player.Character:FindFirstChild("Knife") then
+            return player
+        end
+    end
+    return nil
+end
+
+local function getSheriff()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Backpack and player.Backpack:FindFirstChild("Gun") then
+            return player
+        end
+        if player.Character and player.Character:FindFirstChild("Gun") then
+            return player
+        end
+    end
+    return nil
+end
+
+local function updateKeepWalkspeed()
+    if keepWalkspeedConn then keepWalkspeedConn:Disconnect() end
+    if keepWalkspeed then
+        keepWalkspeedConn = RunService.Stepped:Connect(function()
+            local hum = getHumanoid()
+            if hum and hum.WalkSpeed ~= walkspeed then
+                hum.WalkSpeed = walkspeed
+            end
+        end)
+    end
+end
+
+local function updateKeepJumppower()
+    if keepJumppowerConn then keepJumppowerConn:Disconnect() end
+    if keepJumppower then
+        keepJumppowerConn = RunService.Stepped:Connect(function()
+            local hum = getHumanoid()
+            if hum and hum.JumpPower ~= jumppower then
+                hum.JumpPower = jumppower
+            end
+        end)
+    end
+end
+
+local UniversalTab = Window:Tab({
+    Title = "Universal",
+    Icon = "solar:home-2-bold",
+    IconColor = Grey,
+    Border = true,
+})
+
+local MM2Tab = Window:Tab({
+    Title = "MM2",
+    Icon = "solar:skull-bold",
+    IconColor = Purple,
+    Border = true,
+})
+
+local ServerTab = Window:Tab({
+    Title = "Server",
+    Icon = "solar:global-bold",
+    IconColor = Blue,
+    Border = true,
+})
+
+local SettingsTab = Window:Tab({
+    Title = "Settings",
+    Icon = "solar:settings-bold",
+    IconColor = Grey,
+    Border = true,
+})
+
+local PlayerSection = UniversalTab:Section({
+    Title = "Player"
+})
+
+PlayerSection:Slider({
+    Title = "WalkSpeed",
+    Value = {Min = 16, Max = 350, Default = walkspeed},
+    Step = 1,
+    IsTooltip = true,
+    Callback = function(v)
+        walkspeed = v
+        local hum = getHumanoid()
+        if hum then hum.WalkSpeed = walkspeed end
+    end
+})
+
+PlayerSection:Toggle({
+    Title = "Keep WalkSpeed",
+    Value = keepWalkspeed,
+    Callback = function(v)
+        keepWalkspeed = v
+        updateKeepWalkspeed()
+    end
+})
+
+PlayerSection:Slider({
+    Title = "JumpPower",
+    Value = {Min = 50, Max = 500, Default = jumppower},
+    Step = 1,
+    IsTooltip = true,
+    Callback = function(v)
+        jumppower = v
+        local hum = getHumanoid()
+        if hum then hum.JumpPower = jumppower end
+    end
+})
+
+PlayerSection:Toggle({
+    Title = "Keep JumpPower",
+    Value = keepJumppower,
+    Callback = function(v)
+        keepJumppower = v
+        updateKeepJumppower()
+    end
+})
+
+PlayerSection:Toggle({Title = "Infinity Jump", Value = infJumpOn, Callback = toggleInfJump})
+PlayerSection:Toggle({Title = "Noclip", Value = noclipOn, Callback = toggleNoclip})
+
+local VisualSection = UniversalTab:Section({
+    Title = "Visual"
+})
+
+VisualSection:Toggle({Title = "Invisible", Value = invisOn, Callback = toggleInvisible})
+VisualSection:Toggle({Title = "Fake Ghost", Value = fakeGhostOn, Callback = toggleFakeGhost})
+VisualSection:Toggle({Title = "XRay", Value = xrayEnabled, Callback = toggleXRay})
+VisualSection:Toggle({Title = "Box ESP", Value = false, Callback = function(v) if v then toggleESP(true) end end})
+
+local MovementSection = UniversalTab:Section({
+    Title = "Movement"
+})
+
+MovementSection:Toggle({Title = "Touch Fling", Value = touchFlingEnabled, Callback = function(v)
+    touchFlingEnabled = v
+    if v then
+        local movel = 0.1
+        touchFlingConn = RunService.Heartbeat:Connect(function()
+            local root = getRootPart()
+            if not root then return end
+            local vel = root.Velocity
+            root.Velocity = vel * 9e8 + Vector3.new(0, 9e8, 0)
+            RunService.RenderStepped:Wait()
+            if root then root.Velocity = vel end
+            RunService.Stepped:Wait()
+            if root then root.Velocity = vel + Vector3.new(0, movel, 0); movel = movel * -1 end
+        end)
+    else
+        if touchFlingConn then touchFlingConn:Disconnect() end
+    end
+end})
+
+MovementSection:Toggle({Title = "Noclip Players", Value = noclipPlayersEnabled, Callback = function(v)
+    noclipPlayersEnabled = v
+    if v then
+        noclipPlayersConn = RunService.Stepped:Connect(function()
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    for _, part in pairs(player.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then part.CanCollide = false end
+                    end
+                end
+            end
+        end)
+    else
+        if noclipPlayersConn then noclipPlayersConn:Disconnect() end
+    end
+end})
+
+local FlingSection = UniversalTab:Section({
+    Title = "Fling"
+})
+
+local selectedPlayer
+local playerDropdown = FlingSection:Dropdown({
+    Title = "Select Player",
+    Values = getPlayerList(),
+    Callback = function(v) selectedPlayer = Players:FindFirstChild(v) end
+})
+
+Players.PlayerAdded:Connect(function() playerDropdown:Refresh(getPlayerList()) end)
+Players.PlayerRemoving:Connect(function() playerDropdown:Refresh(getPlayerList()) end)
+
+FlingSection:Button({
+    Title = "Fling Selected",
+    Color = Red,
+    Callback = function()
+        if selectedPlayer then flingPlayer(selectedPlayer)
+        else WindUI:Notify({Title = "Fling", Content = "No player selected", Duration = 1}) end
+    end
+})
+
+local TradeSection = MM2Tab:Section({
+    Title = "Trading"
+})
+
+local tradeInput = TradeSection:Input({
+    Title = "Player Name",
+    PlaceholderText = "Enter name...",
+    Callback = function(t) tradeTarget = t end
+})
+
+TradeSection:Button({Title = "Force Trade", Color = Purple, Callback = function()
+    if tradeTarget then forceTrade(tradeTarget)
+    else WindUI:Notify({Title = "Trade", Content = "Enter a name", Duration = 1}) end
+end})
+
+TradeSection:Button({Title = "Chat Expose Roles", Color = Yellow, Callback = exposeRoles})
+TradeSection:Button({Title = "Steal Gun", Color = Red, Callback = stealGun})
+TradeSection:Button({Title = "Get Every Emote", Color = Green, Callback = unlockEmotes})
+
+local CombatSection = MM2Tab:Section({
+    Title = "Combat"
+})
+
+CombatSection:Toggle({Title = "Auto Gun", Value = autoGunEnabled, Callback = function(v)
+    autoGunEnabled = v
+    if v then
+        task.spawn(function()
+            while autoGunEnabled do
+                task.wait(0.5)
+                local char = getCharacter()
+                if char and char:FindFirstChild("Gun") then
+                    local murderer = getMurderer()
+                    if murderer and murderer.Character then
+                        local target = murderer.Character:FindFirstChild("HumanoidRootPart") or murderer.Character:FindFirstChild("Head")
+                        if target then
+                            local gun = char:FindFirstChild("Gun")
+                            if gun then
+                                local remote = gun:FindFirstChild("KnifeLocal") and gun.KnifeLocal:FindFirstChild("CreateBeam") and gun.KnifeLocal.CreateBeam:FindFirstChild("RemoteFunction")
+                                if remote then
+                                    remote:InvokeServer(1, target.Position, "AH2")
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end})
+
+CombatSection:Toggle({Title = "Auto Grab Gun", Value = autoGrabGunEnabled, Callback = function(v)
+    autoGrabGunEnabled = v
+    if v then
+        task.spawn(function()
+            while autoGrabGunEnabled do
+                task.wait(0.1)
+                local char = getCharacter()
+                local root = getRootPart()
+                if char and root then
+                    local gun = Workspace:FindFirstChild("GunDrop", true)
+                    if gun then
+                        if firetouchinterest then
+                            firetouchinterest(root, gun, 0)
+                            firetouchinterest(root, gun, 1)
+                        else
+                            gun.CFrame = root.CFrame
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end})
+
+CombatSection:Toggle({Title = "God Mode", Value = godModeEnabled, Callback = function(v)
+    godModeEnabled = v
+    if godModeConn then godModeConn:Disconnect() end
+    if v then
+        godModeConn = getHumanoid() and getHumanoid().HealthChanged:Connect(function()
+            local hum = getHumanoid()
+            if hum and hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+        end)
+    end
+end})
+
+local MM2ESPSection = MM2Tab:Section({
+    Title = "ESP"
+})
+
+MM2ESPSection:Toggle({Title = "All Players ESP", Value = allEsp, Callback = function(v)
+    allEsp = v
+    for _, b in ipairs(ESPFolder:GetChildren()) do
+        if b:IsA("BillboardGui") then
+            local name = b.Name:sub(1, -10)
+            local player = Players:FindFirstChild(name)
+            if player then
+                local hasKnife = (player.Character and player.Character:FindFirstChild("Knife")) or (player.Backpack and player.Backpack:FindFirstChild("Knife"))
+                local hasGun = (player.Character and player.Character:FindFirstChild("Gun")) or (player.Backpack and player.Backpack:FindFirstChild("Gun"))
+                if not (hasKnife or hasGun) then b.Enabled = v end
+            end
+        end
+    end
+end})
+
+MM2ESPSection:Toggle({Title = "Murderer ESP", Value = murderEsp, Callback = function(v)
+    murderEsp = v
+    for _, b in ipairs(ESPFolder:GetChildren()) do
+        if b:IsA("BillboardGui") then
+            local name = b.Name:sub(1, -10)
+            local player = Players:FindFirstChild(name)
+            if player and ((player.Character and player.Character:FindFirstChild("Knife")) or (player.Backpack and player.Backpack:FindFirstChild("Knife"))) then
+                b.Enabled = v
+            end
+        end
+    end
+end})
+
+MM2ESPSection:Toggle({Title = "Sheriff ESP", Value = sheriffEsp, Callback = function(v)
+    sheriffEsp = v
+    for _, b in ipairs(ESPFolder:GetChildren()) do
+        if b:IsA("BillboardGui") then
+            local name = b.Name:sub(1, -10)
+            local player = Players:FindFirstChild(name)
+            if player and ((player.Character and player.Character:FindFirstChild("Gun")) or (player.Backpack and player.Backpack:FindFirstChild("Gun"))) then
+                b.Enabled = v
+            end
+        end
+    end
+end})
+
+MM2ESPSection:Toggle({Title = "Gun ESP", Value = gunEspEnabled, Callback = function(v)
+    gunEspEnabled = v
+    task.spawn(function()
+        while gunEspEnabled do
+            task.wait(0.1)
+            local gun = Workspace:FindFirstChild("GunDrop", true)
+            if gun and not gun:FindFirstChild("GunHighlight") then
+                local h = Instance.new("Highlight", gun)
+                h.Name = "GunHighlight"
+                h.FillColor = Color3.new(1, 1, 0)
+                h.OutlineColor = Color3.new(1, 1, 1)
+                h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                h.FillTransparency = 0.4
+            end
+        end
+        local gun = Workspace:FindFirstChild("GunDrop", true)
+        if gun and gun:FindFirstChild("GunHighlight") then gun.GunHighlight:Destroy() end
+    end)
+end})
+
+local MM2FlingSection = MM2Tab:Section({
+    Title = "Fling"
+})
+
+MM2FlingSection:Button({Title = "Fling Murderer", Color = Red, Callback = function()
+    local m = getMurderer()
+    if m then flingPlayer(m) else WindUI:Notify({Title = "Fling", Content = "Murderer not found", Duration = 1}) end
+end})
+
+MM2FlingSection:Button({Title = "Fling Sheriff", Color = Blue, Callback = function()
+    local s = getSheriff()
+    if s then flingPlayer(s) else WindUI:Notify({Title = "Fling", Content = "Sheriff not found", Duration = 1}) end
+end})
+
+local TeleportSection = MM2Tab:Section({
+    Title = "Teleport"
+})
+
+TeleportSection:Button({Title = "Teleport To Map", Color = Green, Callback = function()
+    local map = Workspace:FindFirstChild("CoinContainer", true)
+    if map then
+        local root = getRootPart()
+        if root then
+            local part = map:FindFirstChildWhichIsA("BasePart", true)
+            if part then root.CFrame = part.CFrame * CFrame.new(0, 2, 0) end
+        end
+    end
+end})
+
+TeleportSection:Button({Title = "Teleport To Lobby", Color = Blue, Callback = function()
+    local lobby = Workspace:FindFirstChild("Lobby", true)
+    if lobby then
+        local root = getRootPart()
+        if root then
+            local part = lobby:FindFirstChildWhichIsA("BasePart", true)
+            if part then root.CFrame = part.CFrame * CFrame.new(0, 2, 0) end
+        end
+    end
+end})
+
+local ServerMainSection = ServerTab:Section({
+    Title = "Server Management"
+})
+
+ServerMainSection:Button({Title = "Server Hop", Color = Blue, Callback = serverhop})
+ServerMainSection:Button({Title = "Rejoin", Color = Green, Callback = rejoin})
+
+local ServerInfoSection = ServerTab:Section({
+    Title = "Server Information"
+})
+
+ServerInfoSection:Paragraph({
+    Title = "Current Server",
+    Desc = "Job ID: " .. game.JobId .. "\nPlayers: " .. #Players:GetPlayers() .. "/" .. (Players.MaxPlayers or "?")
+})
+
+local UISection = SettingsTab:Section({
+    Title = "UI Settings"
+})
+
+UISection:Keybind({
+    Title = "Toggle UI Keybind",
+    Value = "RightShift",
+    Callback = function(k) Window:SetToggleKey(Enum.KeyCode[k]) end
+})
+
+UISection:Button({
+    Title = "Destroy UI",
+    Color = Red,
+    Callback = function()
+        if noclipConn then noclipConn:Disconnect() end
+        if infJumpConn then infJumpConn:Disconnect() end
+        if keepWalkspeedConn then keepWalkspeedConn:Disconnect() end
+        if keepJumppowerConn then keepJumppowerConn:Disconnect() end
+        if touchFlingConn then touchFlingConn:Disconnect() end
+        if noclipPlayersConn then noclipPlayersConn:Disconnect() end
+        if godModeConn then godModeConn:Disconnect() end
+        
+        if xrayEnabled then
+            for s, v in pairs(originalLightingSettings) do pcall(function() Lighting[s] = v end) end
+        end
+        
+        for _, l in ipairs(Lines) do if l then l:Remove() end end
+        ESPFolder:Destroy()
+        
+        local char = getCharacter()
+        if char then
+            setTransparency(char, 0)
+            if workspace:FindFirstChild("invischair") then workspace.invischair:Destroy() end
+            local hum = getHumanoid()
+            if hum then hum.WalkSpeed = 16; hum.JumpPower = 50 end
+        end
+        
+        Window:Destroy()
+    end
+})
+
+local AboutSection = SettingsTab:Section({
+    Title = "About"
+})
+
+AboutSection:Paragraph({
+    Title = "Dooxbox Hub",
+    Desc = executorName
+})
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if invisOn then
+        local char = getCharacter()
+        if char then setTransparency(char, 0.5) end
+    end
+    if fakeGhostOn then
+        local char = getCharacter()
+        if char then setTransparency(char, 0.8) end
+    end
+    if keepWalkspeed then updateKeepWalkspeed() end
+    if keepJumppower then updateKeepJumppower() end
+    if godModeEnabled and godModeConn then
+        godModeConn:Disconnect()
+        godModeConn = getHumanoid() and getHumanoid().HealthChanged:Connect(function()
+            local hum = getHumanoid()
+            if hum and hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+        end)
+    end
+end)
